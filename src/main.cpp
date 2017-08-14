@@ -6,10 +6,14 @@
 #include <thread>
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
+#include "Eigen-3.3/Eigen/LU"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 // for convenience
 using json = nlohmann::json;
@@ -159,6 +163,39 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+void printVector(vector<double> vec) {
+  cout << "[";
+  for (int i=0; i<vec.size(); i++) {
+    if (i == (vec.size() - 1)) {
+      cout << vec[i];
+    } else {
+      cout << vec[i] << ", ";
+    }
+  }
+  cout << "]" << endl;
+}
+
+vector<double> JMT(vector< double> start, vector <double> end, double T)
+{
+    double i_0 = end[0] - (start[0] + start[1]*T + 0.5*start[2]*T*T);
+    double i_1 = end[1] - (start[1] + start[2]*T);
+    double i_2 = end[2] - start[2];
+    
+    VectorXd ind(3);
+    ind << i_0, i_1, i_2;
+    
+    MatrixXd coeffs(3,3);
+    coeffs << pow(T,3), pow(T,4), pow(T,5),
+              3*pow(T,2), 4*pow(T,3), 5*pow(T,4),
+              6*T, 12*pow(T,2), 20*pow(T,3);
+    
+    VectorXd sol = coeffs.inverse() * ind;
+    
+    return {start[0], start[1], 0.5*start[2], sol(0), sol(1), sol(2)};    
+}
+
+
+
 int main() {
   uWS::Hub h;
 
@@ -240,6 +277,26 @@ int main() {
 
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+          	
+          	cout << "================" << endl;
+          	cout << "Car pos: " << car_x << ", " << car_y << endl;
+          	cout << "Car pos frenet: " << car_s << ", " << car_d << endl;
+          	cout << "Car yaw: " << car_yaw << endl;
+          	
+        	  double dist_inc = 0.2;
+         	  for (int i=1; i<50; i++) {
+         	    double next_s = car_s + dist_inc * i;          	  
+         	    vector<double> coords = getXY(next_s, car_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+         	    cout << "next_s: " << next_s << " coords: " << coords[0] << ", " << coords[1] << endl;
+         	    next_x_vals.push_back(coords[0]);
+         	    next_y_vals.push_back(coords[1]);
+         	  }
+          	
+          	printVector(next_x_vals);
+          	printVector(next_y_vals);
+          	
+          	cout << endl << "================" << endl;          	
+          	
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
