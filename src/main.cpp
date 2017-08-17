@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <cfloat>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/LU"
 #include "Eigen-3.3/Eigen/QR"
@@ -163,6 +164,29 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+int getLane(double d) {
+  int lane = -1;
+  if (d < 4) {
+    lane = 0;
+  } else if (d < 8) {
+    lane = 1;
+  } else {
+    lane = 2;
+  }
+  return lane;
+}
+
+vector<int> getCandidateLanes(int current_lane) {
+  vector<int> lanes;
+  if (current_lane == 1) {
+    lanes.push_back(0);
+    lanes.push_back(2);
+  } else {
+    lanes.push_back(1);
+  }
+  return lanes;
+}
+
 int main() {
   uWS::Hub h;
 
@@ -252,33 +276,59 @@ int main() {
  	          if (prev_size > 0) {
  	            car_s = end_path_s;
  	          }
- 	          
+ 	           	          
  	          bool too_close = false;
- 	          double close_car_speed = 49.5;
+ 	          double lane_data[3][3];
+ 	          
+ 	          for (int i=0; i<3; i++) {
+ 	           for (int j=0; j<3; j++) {
+ 	             lane_data[i][j] = DBL_MAX;
+ 	           }
+ 	          }
  	          
  	          for (int i=0; i < sensor_fusion.size(); i++) {
- 	            float d = sensor_fusion[i][6];
- 	            if (d < (2+4*lane+2) && d > (2+4*lane-2)) {
- 	              double vx = sensor_fusion[i][3];
- 	              double vy = sensor_fusion[i][4];
- 	              double check_speed = sqrt(vx*vx+vy*vy);
- 	              double check_car_s = sensor_fusion[i][5];
+ 	            double d = sensor_fusion[i][6];
+ 	            int car_lane = getLane(d);
+              double vx = sensor_fusion[i][3];
+              double vy = sensor_fusion[i][4];
+              double check_speed = sqrt(vx*vx+vy*vy);
+              double check_car_s = sensor_fusion[i][5];
  	              
- 	              check_car_s += ((double)prev_size*.02*check_speed);
- 	              
- 	              if ((check_car_s > car_s) && ((check_car_s-car_s) < 40)) {
- 	                too_close = true;
- 	                close_car_speed = check_speed;
+              check_car_s += ((double)prev_size*.02*check_speed);
+              double s_diff = abs(check_car_s - car_s);
+              if ((check_car_s < car_s) && (s_diff < lane_data[car_lane][0])) {
+                lane_data[car_lane][0] = s_diff;
+              } else if ((check_car_s > car_s) && (s_diff < lane_data[car_lane][1])) {
+                lane_data[car_lane][1] = s_diff;
+                lane_data[car_lane][2] = check_speed;
+              } 	            
+ 	          }
+ 	          
+ 	          bool change_lane = false;
+ 	          if (lane_data[lane][1] < 30) {
+ 	            too_close = true;
+ 	            vector<int> poss_lanes = getCandidateLanes(lane);
+ 	            for (int i=0; i<poss_lanes.size(); i++) {
+ 	              int poss_lane = poss_lanes[i];
+ 	              double diff_s_back = lane_data[poss_lane][0];
+ 	              double diff_s_ahead = lane_data[poss_lane][1];
+ 	              if ((diff_s_back > 20) && (diff_s_ahead > 20)) {
+ 	                change_lane = true;
+ 	                lane = poss_lane;
+ 	                cout << "Change to lane: " << lane << " S back: " << diff_s_back << " S ahead: " << diff_s_ahead << endl;
  	              }
  	            }
  	          }
- 	
- 	          if ((too_close) && (car_speed > (close_car_speed + 3))) {
- 	            ref_vel -= .224;
- 	          } else if ((too_close) && (car_speed < (close_car_speed - 3))) {
- 	            ref_vel += .224;
- 	          } else if (ref_vel < 49.5) {
- 	            ref_vel += .224;
+ 	          
+ 	          if (!change_lane) {
+ 	            double close_car_speed = lane_data[lane][2];
+   	          if ((too_close) && (car_speed > (close_car_speed + 3))) {
+ 	              ref_vel -= .112;
+ 	            } else if ((too_close) && (car_speed < (close_car_speed - 3))) {
+ 	              ref_vel += .224;
+ 	            } else if (ref_vel < 49.5) {
+ 	              ref_vel += .224;
+ 	            }
  	          }
  	
             vector<double> ptsx;
