@@ -277,8 +277,20 @@ int main() {
  	          if (prev_size > 0) {
  	            car_s = end_path_s;
  	          }
- 	           	          
+ 	          
+ 	          /* lane changing or speed reducing behaviors are triggered when
+ 	             a car ahead of us in the same lane gets too close */
  	          bool too_close = false;
+ 	          
+ 	          /* 
+ 	             stores the data taken from sensor fusion that we will use
+ 	             to make decisions. for each of the three lanes, it keeps:
+ 	             - future S distance to our car of the closest vehicle behind us
+ 	               in that lane
+ 	             - future S distance to our car of the closest vehicle ahead of us
+ 	               in that lane
+ 	             - speed of the closest vehicle ahead of us in that lane
+ 	          */
  	          double lane_data[3][3];
  	          
  	          for (int i=0; i<3; i++) {
@@ -287,6 +299,8 @@ int main() {
  	           }
  	          }
  	          
+ 	          /* we check the sensor values of the other vehicles and populate
+ 	             lane data with the information we need */
  	          for (int i=0; i < sensor_fusion.size(); i++) {
  	            double d = sensor_fusion[i][6];
  	            int car_lane = getLane(d);
@@ -305,6 +319,19 @@ int main() {
               } 	            
  	          }
  	          
+ 	          /* 
+ 	            lane change decision process:
+ 	            1. check if needed: close car ahead of us in our lane and no
+ 	               lane change was performed recently
+ 	            2. for every adjacent lane, check if safe: enough free space
+ 	               behind and ahead of us based on future S distance between
+ 	               our car and the closest vehicles in that lane
+ 	            3. for every safe lane, check if worth it: vehicle ahead of us
+ 	               in that lane is going quicker that the one in our lane, or is
+ 	               far away enough, or it is the center lane
+ 	            4. for every worthy lane, pick the one where the closest vehicle
+ 	               ahead of us is farther
+ 	          */ 	          
  	          vector<int> clear_lanes;
  	          bool change_lane = false;
  	          if ((lane_data[lane][1] < 30) && (cycles_with_no_lane_change > 25)) {
@@ -339,6 +366,12 @@ int main() {
  	           	  } 	           	  
  	           	}
  	           	cout << "Change to lane: " << lane << endl;
+ 	          /* 
+ 	            no lane change needed, possible, or worthy
+ 	            - accelerate if speed below legal limit or too close car in
+ 	              our lane going quicker than us
+ 	            - brake if too close car in our lane going slower than us
+ 	          */
  	          } else {
  	            cycles_with_no_lane_change++;
  	            double close_car_speed = lane_data[lane][2];
@@ -358,6 +391,15 @@ int main() {
             double ref_y = car_y;
             double ref_yaw = deg2rad(car_yaw);
 
+            /*
+              trajectories are calculated using a spline that goes 
+              through five reference points: three points from the future 
+              trajectory we want our car to follow, two points from the previous
+              trajectory, so that both trajectories are smoothly connected
+            */
+
+            /* two points from the previous trajectory followed by the car,
+               or the car position if no previous trajectory */
             if (prev_size < 2) {
               double prev_car_x = car_x - cos(car_yaw);
               double prev_car_y = car_y - sin(car_yaw);
@@ -382,6 +424,8 @@ int main() {
               ptsy.push_back(ref_y);
             }
 
+            /* three points from the future trajectory we want to follow,
+               spaced 30, 60 and 90 meters ahead of us */
             vector<double> next_wp0 = getXY(car_s+30,2+4*lane,map_waypoints_s,map_waypoints_x,map_waypoints_y);
             vector<double> next_wp1 = getXY(car_s+60,2+4*lane,map_waypoints_s,map_waypoints_x,map_waypoints_y);
             vector<double> next_wp2 = getXY(car_s+90,2+4*lane,map_waypoints_s,map_waypoints_x,map_waypoints_y);
@@ -394,6 +438,10 @@ int main() {
             ptsy.push_back(next_wp1[1]);
             ptsy.push_back(next_wp2[1]);
 
+
+            /* reference points are converted to local car coordinates to ease
+               calculations, e.g. avoiding vertical splines that could give
+               more than one y coordinate for the same x */
             for (int i=0; i<ptsx.size(); i++) {
               double shift_x = ptsx[i]-ref_x;
               double shift_y = ptsy[i]-ref_y;
@@ -402,15 +450,21 @@ int main() {
               ptsy[i] = (shift_x *sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
             }
 
+            /* spline creation */
             tk::spline s;
 
             s.set_points(ptsx,ptsy);
 
+            /* we add to the future trajectory the waypoints from the previous 
+               trajectory that are not used yet */
             for (int i=0; i<previous_path_x.size(); i++) {
               next_x_vals.push_back(previous_path_x[i]);
               next_y_vals.push_back(previous_path_y[i]);
             }
 
+            /* we generate the future waypoints by sampling from the spline.
+               the spacing of the waypoints depends on the reference velocity
+               we want for the car */
             double target_x = 30.0;
             double target_y = s(target_x);
             double target_dist = sqrt((target_x)*(target_x)+(target_y)*(target_y));
