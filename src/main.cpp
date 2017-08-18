@@ -312,10 +312,14 @@ int main() {
  	              int poss_lane = poss_lanes[i];
  	              double diff_s_back = lane_data[poss_lane][0];
  	              double diff_s_ahead = lane_data[poss_lane][1];
- 	              if ((diff_s_back > 20) && (diff_s_ahead > 20)) {
- 	                change_lane = true;
- 	                lane = poss_lane;
- 	                cout << "Change to lane: " << lane << " S back: " << diff_s_back << " S ahead: " << diff_s_ahead << endl;
+ 	              if ((diff_s_back > 10) && (diff_s_ahead > 10)) {
+ 	                double speed_ahead = lane_data[poss_lane][2];
+ 	                double speed_front = lane_data[lane][2];
+ 	                if (((speed_ahead - speed_front) > 5) || (diff_s_ahead > 50)) {
+ 	                  change_lane = true;
+ 	                  lane = poss_lane;
+ 	                  cout << "Change to lane: " << lane << " S back: " << diff_s_back << " S ahead: " << diff_s_ahead << endl;
+ 	                }
  	              }
  	            }
  	          }
@@ -323,7 +327,7 @@ int main() {
  	          if (!change_lane) {
  	            double close_car_speed = lane_data[lane][2];
    	          if ((too_close) && (car_speed > (close_car_speed + 3))) {
- 	              ref_vel -= .112;
+ 	              ref_vel -= .224;
  	            } else if ((too_close) && (car_speed < (close_car_speed - 3))) {
  	              ref_vel += .224;
  	            } else if (ref_vel < 49.5) {
