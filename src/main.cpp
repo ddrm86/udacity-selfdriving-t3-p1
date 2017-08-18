@@ -226,8 +226,9 @@ int main() {
 
   int lane = 1;
   double ref_vel = 0.0; //mph
+  int cycles_with_no_lane_change = 0;
 
-  h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane,&cycles_with_no_lane_change](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -304,27 +305,42 @@ int main() {
               } 	            
  	          }
  	          
+ 	          vector<int> clear_lanes;
  	          bool change_lane = false;
- 	          if (lane_data[lane][1] < 30) {
+ 	          if ((lane_data[lane][1] < 30) && (cycles_with_no_lane_change > 25)) {
  	            too_close = true;
  	            vector<int> poss_lanes = getCandidateLanes(lane);
  	            for (int i=0; i<poss_lanes.size(); i++) {
  	              int poss_lane = poss_lanes[i];
  	              double diff_s_back = lane_data[poss_lane][0];
  	              double diff_s_ahead = lane_data[poss_lane][1];
- 	              if ((diff_s_back > 10) && (diff_s_ahead > 10)) {
+ 	              if ((diff_s_back > 10) && (diff_s_ahead > 20)) {
  	                double speed_ahead = lane_data[poss_lane][2];
  	                double speed_front = lane_data[lane][2];
- 	                if (((speed_ahead - speed_front) > 5) || (diff_s_ahead > 50)) {
+ 	                if (((speed_ahead - speed_front) > 5) || (diff_s_ahead > 50) || (poss_lane == 1)) {
+ 	                  clear_lanes.push_back(poss_lane);
+ 	                  cycles_with_no_lane_change = 0;
  	                  change_lane = true;
- 	                  lane = poss_lane;
- 	                  cout << "Change to lane: " << lane << " S back: " << diff_s_back << " S ahead: " << diff_s_ahead << endl;
  	                }
  	              }
  	            }
  	          }
  	          
- 	          if (!change_lane) {
+ 	          if (change_lane) {
+ 	            if (clear_lanes.size() == 1) {
+ 	           	  lane = clear_lanes[0];
+ 	           	} else {
+ 	           	  double first_clear_lane_s_ahead = lane_data[clear_lanes[0]][1];
+ 	           	  double second_clear_lane_s_ahead = lane_data[clear_lanes[1]][1];
+ 	           	  if (first_clear_lane_s_ahead > second_clear_lane_s_ahead) {
+ 	           	    lane = clear_lanes[0];
+ 	           	  } else {
+ 	           	    lane = clear_lanes[1];
+ 	           	  } 	           	  
+ 	           	}
+ 	           	cout << "Change to lane: " << lane << endl;
+ 	          } else {
+ 	            cycles_with_no_lane_change++;
  	            double close_car_speed = lane_data[lane][2];
    	          if ((too_close) && (car_speed > (close_car_speed + 3))) {
  	              ref_vel -= .224;
